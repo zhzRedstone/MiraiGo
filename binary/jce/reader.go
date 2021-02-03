@@ -322,6 +322,18 @@ func (r *JceReader) ReadAny(tag int) interface{} {
 	}
 }
 
+func (r *JceReader) ReadJceStruct(obj IJceStruct, tag int) {
+	if !r.skipToTag(tag) {
+		return
+	}
+	hd, _ := r.readHead()
+	if hd.Type != 10 {
+		return
+	}
+	obj.ReadFrom(r)
+	r.skipToStructEnd()
+}
+
 func (r *JceReader) ReadMapF(tag int, f func(interface{}, interface{})) {
 	if !r.skipToTag(tag) {
 		return
@@ -348,6 +360,11 @@ func (r *JceReader) readObject(t reflect.Type, tag int) reflect.Value {
 		r.ReadObject(&s, tag)
 		return reflect.ValueOf(s)
 	case reflect.Slice:
+		if _, ok := reflect.New(t.Elem()).Interface().(*[]byte); ok {
+			arr := &[]byte{}
+			r.ReadSlice(arr, tag)
+			return reflect.ValueOf(arr).Elem()
+		}
 		s := reflect.New(t.Elem()).Interface().(IJceStruct)
 		r.readHead()
 		s.ReadFrom(r)

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"github.com/Mrs4s/MiraiGo/binary"
+	"github.com/Mrs4s/MiraiGo/client/pb/msg"
 )
 
 type TextElement struct {
@@ -13,15 +16,42 @@ type TextElement struct {
 type ImageElement struct {
 	Filename string
 	Size     int32
+	Width    int32
+	Height   int32
 	Url      string
 	Md5      []byte
 	Data     []byte
 }
 
 type GroupImageElement struct {
-	ImageId string
-	Md5     []byte
-	Url     string
+	ImageId   string
+	FileId    int64
+	ImageType int32
+	Size      int32
+	Width     int32
+	Height    int32
+	Md5       []byte
+	Url       string
+}
+
+type VoiceElement struct {
+	Name string
+	Md5  []byte
+	Size int32
+	Url  string
+
+	// --- sending ---
+	Data []byte
+}
+
+type GroupVoiceElement struct {
+	Data []byte
+	Ptt  *msg.Ptt
+}
+
+type PrivateVoiceElement struct {
+	Data []byte
+	Ptt  *msg.Ptt
 }
 
 type FriendImageElement struct {
@@ -31,8 +61,9 @@ type FriendImageElement struct {
 }
 
 type FaceElement struct {
-	Index int32
-	Name  string
+	Index      int32
+	NewSysFace bool
+	Name       string
 }
 
 type AtElement struct {
@@ -56,6 +87,16 @@ type ReplyElement struct {
 	//original []*msg.Elem
 }
 
+type ShortVideoElement struct {
+	Name      string
+	Uuid      []byte
+	Size      int32
+	ThumbSize int32
+	Md5       []byte
+	ThumbMd5  []byte
+	Url       string
+}
+
 type ServiceElement struct {
 	Id      int32
 	Content string
@@ -64,8 +105,64 @@ type ServiceElement struct {
 }
 
 type ForwardElement struct {
-	ResId string
+	FileName string
+	Content  string
+	ResId    string
+	Items    []*msg.PbMultiMsgItem
 }
+
+type LightAppElement struct {
+	Content string
+}
+
+type RedBagElement struct {
+	MsgType RedBagMessageType
+	Title   string
+}
+
+// MusicShareElement 音乐分享卡片
+//
+// 请使用 SendGroupMusicShare 或者 SendFriendMusicShare 发送
+type MusicShareElement struct {
+	MusicType  int    // 音乐类型,请使用 QQMusic 等常量
+	Title      string // 标题(歌曲名)
+	Brief      string
+	Summary    string // 简介(歌手名)
+	Url        string // 点击跳转链接
+	PictureUrl string // 显示图片链接
+	MusicUrl   string // 音乐播放链接
+}
+
+// TODO: 总之就是非常傻逼
+
+type GroupFlashImgElement struct {
+	ImageElement
+}
+
+type GroupFlashPicElement struct {
+	GroupImageElement
+}
+
+type GroupShowPicElement struct {
+	GroupImageElement
+	EffectId int32
+}
+
+type FriendFlashImgElement struct {
+	ImageElement
+}
+
+type FriendFlashPicElement struct {
+	FriendImageElement
+}
+
+type RedBagMessageType int
+
+const (
+	Simple RedBagMessageType = 2
+	Lucky  RedBagMessageType = 3
+	World  RedBagMessageType = 6
+)
 
 func NewText(s string) *TextElement {
 	return &TextElement{Content: s}
@@ -77,17 +174,30 @@ func NewImage(data []byte) *ImageElement {
 	}
 }
 
-func NewGroupImage(id string, md5 []byte) *GroupImageElement {
+func NewGroupImage(id string, md5 []byte, fid int64, size, width, height, imageType int32) *GroupImageElement {
 	return &GroupImageElement{
-		ImageId: id,
-		Md5:     md5,
-		Url:     "http://gchat.qpic.cn/gchatpic_new/1/0-0-" + strings.ReplaceAll(id[1:36], "-", "") + "/0?term=2",
+		ImageId:   id,
+		FileId:    fid,
+		Md5:       md5,
+		Size:      size,
+		ImageType: imageType,
+		Width:     width,
+		Height:    height,
+		Url:       "http://gchat.qpic.cn/gchatpic_new/1/0-0-" + strings.ReplaceAll(binary.CalculateImageResourceId(md5)[1:37], "-", "") + "/0?term=2",
 	}
 }
 
 func NewFace(index int32) *FaceElement {
 	name := faceMap[int(index)]
 	if name == "" {
+		name = newSysFaceMap[int(index)]
+		if name != "" {
+			return &FaceElement{
+				Index:      index,
+				NewSysFace: true,
+				Name:       name,
+			}
+		}
 		name = "未知表情"
 	}
 	return &FaceElement{
@@ -135,12 +245,42 @@ func NewUrlShare(url, title, content, image string) *ServiceElement {
 		SubType: "UrlShare",
 	}
 }
+func NewRichXml(template string, ResId int64) *ServiceElement {
+	if ResId == 0 {
+		ResId = 60 //默认值60
+	}
+	return &ServiceElement{
+		Id:      int32(ResId),
+		Content: template,
+		SubType: "xml",
+	}
+}
+
+func NewRichJson(template string) *ServiceElement {
+	return &ServiceElement{
+		Id:      1,
+		Content: template,
+		SubType: "json",
+	}
+}
+
+func NewLightApp(content string) *LightAppElement {
+	return &LightAppElement{Content: content}
+}
 
 func (e *TextElement) Type() ElementType {
 	return Text
 }
 
 func (e *ImageElement) Type() ElementType {
+	return Image
+}
+
+func (e *GroupFlashImgElement) Type() ElementType {
+	return Image
+}
+
+func (e *FriendFlashImgElement) Type() ElementType {
 	return Image
 }
 
@@ -174,6 +314,35 @@ func (e *ForwardElement) Type() ElementType {
 
 func (e *GroupFileElement) Type() ElementType {
 	return File
+}
+
+func (e *GroupVoiceElement) Type() ElementType {
+	return Voice
+}
+
+func (e *PrivateVoiceElement) Type() ElementType {
+	return Voice
+}
+
+func (e *VoiceElement) Type() ElementType {
+	return Voice
+}
+
+func (e *ShortVideoElement) Type() ElementType {
+	return Video
+}
+
+func (e *LightAppElement) Type() ElementType {
+	return LightApp
+}
+
+// Type implement message.IMessageElement
+func (e *MusicShareElement) Type() ElementType {
+	return LightApp
+}
+
+func (e *RedBagElement) Type() ElementType {
+	return RedBag
 }
 
 var faceMap = map[int]string{
@@ -331,4 +500,37 @@ var faceMap = map[int]string{
 	208: "小样儿",
 	210: "飙泪",
 	211: "我不看",
+	247: "口罩护体",
+}
+
+var newSysFaceMap = map[int]string{
+	260: "搬砖中",
+	261: "忙到飞起",
+	262: "脑阔疼",
+	263: "沧桑",
+	264: "捂脸",
+	265: "辣眼睛",
+	266: "哦呦",
+	267: "头秃",
+	268: "问号脸",
+	269: "暗中观察",
+	270: "emm",
+	271: "吃瓜",
+	272: "呵呵哒",
+	273: "我酸了",
+	274: "太南了",
+	276: "辣椒酱",
+	277: "汪汪",
+	278: "汗",
+	279: "打脸",
+	280: "击掌",
+	281: "无眼笑",
+	282: "敬礼",
+	283: "狂笑",
+	284: "面无表情",
+	285: "摸鱼",
+	286: "魔鬼笑",
+	287: "哦",
+	288: "请",
+	289: "睁眼",
 }

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/rand"
 	"math/big"
+	"reflect"
+	"unsafe"
 )
 
 func RandomString(len int) string {
@@ -20,6 +22,24 @@ func RandomStringRange(len int, str string) string {
 		res += string(str[randomInt.Int64()])
 	}
 	return res
+}
+
+func ChunkString(s string, chunkSize int) []string {
+	var chunks []string
+	runes := []rune(s)
+
+	if len(runes) == 0 || len(runes) <= chunkSize {
+		return []string{s}
+	}
+
+	for i := 0; i < len(runes); i += chunkSize {
+		nn := i + chunkSize
+		if nn > len(runes) {
+			nn = len(runes)
+		}
+		chunks = append(chunks, string(runes[i:nn]))
+	}
+	return chunks
 }
 
 func ChineseLength(str string, limit int) int {
@@ -40,4 +60,24 @@ func ChineseLength(str string, limit int) int {
 		}
 	}
 	return sum
+}
+
+// from github.com/savsgio/gotils/strconv
+// B2S converts byte slice to a string without memory allocation.
+// See https://groups.google.com/forum/#!msg/Golang-Nuts/ENgbUzYvCuU/90yGx7GUAgAJ .
+func B2S(b []byte) string {
+	return *(*string)(unsafe.Pointer(&b))
+}
+
+// S2B converts string to a byte slice without memory allocation.
+//
+// Note it may break if string and/or slice header will change
+// in the future go versions.
+func S2B(s string) (b []byte) {
+	sh := (*reflect.StringHeader)(unsafe.Pointer(&s))
+	bh := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+	bh.Data = sh.Data
+	bh.Cap = sh.Len
+	bh.Len = sh.Len
+	return
 }
